@@ -11,6 +11,73 @@ Instalación de OJS PKP con docker
 * Operating system: Any OS that supports the above software, including Linux, BSD, Solaris, Mac OS X, Windows
 Puedes verlos [aquí](https://github.com/pkp/ojs/blob/3_3_0-14/docs/README.md#system-requirements)
 
+## Definimos una configuracion para apache en "root/etc/php7/conf.d"
+```text
+post_max_size = 30M
+file_uploads = On
+upload_max_filesize = 50M
+opcache_memory_consumption = 512
+opcache_interned_strings_buffer = 8
+opcache_max_accelerated_files = 4000
+opcache_revalidate_freq = 60
+opcache_fast_shutdown = 1
+opcache_max_file_size = 0
+opcache_enable_cli = 1
+```
+
+## Definimos una configuracion para apache en "root/etc/apache2/conf.d"
+```apache
+LoadModule slotmem_shm_module modules/mod_slotmem_shm.so
+LoadModule rewrite_module modules/mod_rewrite.so
+LoadModule expires_module modules/mod_expires.so
+
+<VirtualHost *:80>
+	ServerName www.example.com
+	DocumentRoot /var/www/html
+	
+	RewriteEngine on
+	AcceptPathInfo On
+	<Directory /var/www/html>
+		Options FollowSymLinks
+		AllowOverride all
+		Allow from all
+	        
+		# This removes index.php from the url
+		RewriteCond %{REQUEST_FILENAME} !-d 
+		RewriteCond %{REQUEST_FILENAME} !-f 
+		RewriteRule ^(.*)$ index.php/$1 [QSA,L]
+	</Directory>
+
+    ErrorLog  /var/log/apache2/error.log  
+    CustomLog  /var/log/apache2/access.log combined
+</VirtualHost>
+<VirtualHost *:443>
+	ServerName www.example.com
+	DocumentRoot /var/www/html
+	
+	SSLEngine on
+    SSLCertificateFile /etc/ssl/apache2/server.pem
+    SSLCertificateKeyFile /etc/ssl/apache2/server.key
+	
+	PassEnv HTTPS
+	RewriteEngine on
+	AcceptPathInfo On
+	<Directory /var/www/html>
+		Options FollowSymLinks
+		AllowOverride all
+		Allow from all
+	        
+		# This removes index.php from the url
+		RewriteCond %{REQUEST_FILENAME} !-d 
+		RewriteCond %{REQUEST_FILENAME} !-f 
+		RewriteRule ^(.*)$ index.php/$1 [QSA,L]
+	</Directory>
+
+    ErrorLog  /var/log/apache2/error.log  
+    CustomLog  /var/log/apache2/access.log combined
+</VirtualHost>
+```
+
 ## Creamos un dockerfile
 El dockerfile lo basaremos de alpine:3.11 y utilizaremos el directorio base "/var/www/html"
 
@@ -113,4 +180,210 @@ Definimos para instalacion node y npm asi como git
 ## Exponemos puertos y definimos volumenes
 ![imagen](https://github.com/gouh/ojspkp/assets/13145599/06a34c8c-8a1d-41fc-bbc4-1f94fecf3f8a)
 
+## El resultado de nuestro dockerfile es el siguiente
+```dockerfile
+FROM alpine:3.11
+
+WORKDIR /var/www/html
+
+# Configuraciones base de datos y super usuario de composer asi como archivos de configuracion apache y config
+ENV COMPOSER_ALLOW_SUPERUSER=1  \
+	SERVERNAME="localhost"      \
+	HTTPS="on"                  \
+	OJS_VERSION=3_3_0-14 \
+	OJS_CLI_INSTALL="0"         \
+	OJS_DB_HOST="ojs_db_journal"     \
+	OJS_DB_USER="ojs"           \
+	OJS_DB_PASSWORD="ojs"       \
+	OJS_DB_NAME="ojs"           \
+	OJS_WEB_CONF="/etc/apache2/conf.d/ojs.conf"	\
+	OJS_CONF="/var/www/html/config.inc.php"
+
+
+# directorio de PHP
+ENV PHP_INI_DIR /etc/php/7.3
+
+# Servicios basicos
+ENV PACKAGES 		\
+	apache2 		\
+	apache2-ssl 	\
+	apache2-utils 	\
+	ca-certificates \
+	curl 			\
+	ttf-freefont	\
+	dcron 			\
+	patch			\
+	php7			\
+	php7-apache2	\
+	runit
+
+# Extensiones de php
+ENV PHP_EXTENSIONS	\
+	php7-bcmath		\
+	php7-bz2		\
+	php7-calendar	\
+	php7-ctype		\
+	php7-curl		\
+	php7-dom		\
+	php7-exif		\
+	php7-fileinfo	\
+	php7-ftp		\
+	php7-gettext	\
+	php7-intl		\
+	php7-iconv		\
+	php7-json		\
+	php7-mbstring	\
+	php7-mysqli		\
+	php7-opcache	\
+	php7-openssl	\
+	php7-pdo_mysql	\
+	php7-phar		\
+	php7-posix		\
+	php7-session	\
+	php7-shmop		\
+	php7-simplexml	\
+	php7-sockets	\
+	php7-sysvmsg	\
+	php7-sysvsem	\
+	php7-sysvshm	\
+	php7-tokenizer	\
+	php7-xml		\
+	php7-xmlreader	\
+	php7-xmlwriter	\
+	php7-zip		\
+	php7-zlib
+
+# Herramientas para construir ojs
+ENV BUILDERS 		\
+	git 			\
+	nodejs 			\
+	npm
+
+# Listado de datos a excluir
+COPY exclude.list /tmp/exclude.list
+
+RUN set -xe \
+	&& apk add --no-cache --virtual .build-deps $BUILDERS \
+	&& apk add --no-cache $PACKAGES \
+	&& apk add --no-cache $PHP_EXTENSIONS \
+# Construir OJS:
+	# descargar y configurar con git
+	&& git config --global url.https://.insteadOf git:// \
+	&& git config --global advice.detachedHead false \
+	&& git clone --depth 1 --single-branch --branch $OJS_VERSION --progress https://github.com/pkp/ojs.git . \
+	&& git submodule update --init --recursive >/dev/null \
+
+	# Composer vudu:
+ 	&& curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer.phar \
+
+	# Instalar dependencias de composer:
+ 	&& composer.phar --working-dir=lib/pkp install --no-dev \
+ 	&& composer.phar --working-dir=plugins/paymethod/paypal install --no-dev \
+	&& composer.phar --working-dir=plugins/generic/citationStyleLanguage install --no-dev \
+	
+	# Instalamos dependencias de node
+	&& npm install -y && npm run build \
+
+
+	# Crear directorios
+ 	&& mkdir -p /var/www/files /run/apache2  \
+	&& cp config.TEMPLATE.inc.php config.inc.php \
+	&& chown -R apache:apache /var/www/* \
+
+	# Preparar freefont
+	&& ln -s /usr/share/fonts/TTF/FreeSerif.ttf /usr/share/fonts/FreeSerif.ttf \
+	
+	# Preparar crontabs
+	&& echo "0 * * * *   ojs-run-scheduled" | crontab - \
+
+	# Preparar configuracion apache httpd.conf
+	&& sed -i -e '\#<Directory />#,\#</Directory>#d' /etc/apache2/httpd.conf \
+	&& sed -i -e "s/^ServerSignature.*/ServerSignature Off/" /etc/apache2/httpd.conf \
+
+	# Limpiar imagen con exclude.list
+	&& cd /var/www/html \
+ 	&& rm -rf $(cat /tmp/exclude.list) \
+	&& apk del --no-cache .build-deps \
+	&& rm -rf /tmp/* \
+	&& rm -rf /root/.cache/* \
+
+	# Eliminando folders y archivos no requeridos
+	&& find . -name ".git" -exec rm -Rf '{}' \; \
+	&& find . -name ".travis.yml" -exec rm -Rf '{}' \; \
+	&& find . -name "test" -exec rm -Rf '{}' \; \
+	&& find . \( -name .gitignore -o -name .gitmodules -o -name .keepme \) -exec rm -Rf '{}' \;
+
+# Copiar el contenido de nuestra carpeta principal
+COPY root/ /
+
+# Exponer puertos
+EXPOSE 80 
+EXPOSE 443
+
+# Determinar volumen de nuestros archivos publicos
+VOLUME [ "/var/www/files", "/var/www/html/public" ]
+
+RUN chmod +x /usr/local/bin/ojs-start
+CMD ["ojs-start"]
+
+```
+
+## Por ultimo preparamos un docker compose con mariadb y nuestro dockerfile
+```yaml
+version: "3.6"
+
+networks:
+  inside:
+    external: false
+
+services:
+  db:
+    image: mariadb:10.2
+    container_name: "ojs_db_${COMPOSE_PROJECT_NAME:-demo}"
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-ojsPwd}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-ojs}"
+      MYSQL_USER: "${MYSQL_USER:-ojs}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:-ojsPwd}"
+    networks:
+      - inside
+    restart: always
+
+  ojs:
+    build: .
+    container_name: "ojs_app_${COMPOSE_PROJECT_NAME:-demo}"
+    hostname: "${COMPOSE_PROJECT_NAME:-demo}"
+    ports:
+      - "${HTTP_PORT:-8081}:80"
+      - "${HTTPS_PORT:-443}:443"
+    networks:
+      - inside
+    depends_on:
+      - db
+    restart: always
+
+```
+
+## Estas son las variables que utilizaremos con nuesto docker-compose
+```env
+COMPOSE_PROJECT_NAME=journal
+PROJECT_DOMAIN=journal.localhost
+SERVERNAME=$PROJECT_DOMAIN
+
+HTTP_PORT=8081
+HTTPS_PORT=8481
+ADMINER_HTTP=9081
+
+MYSQL_ROOT_PASSWORD=root
+MYSQL_USER=ojs
+MYSQL_PASSWORD=ojs
+MYSQL_DATABASE=ojs
+
+OJS_CLI_INSTALL=0
+OJS_DB_HOST=db
+OJS_DB_DRIVER=mysqli
+OJS_DB_USER=ojs 
+OJS_DB_PASSWORD=ojs 
+OJS_DB_NAME=ojs 
+```
 
