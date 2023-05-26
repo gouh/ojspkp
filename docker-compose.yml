@@ -1,0 +1,31 @@
+version: "3.6"
+
+networks:
+  inside:
+    external: false
+
+services:
+  db:
+    image: mariadb:10.2
+    container_name: "ojs_db_${COMPOSE_PROJECT_NAME:-demo}"
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-ojsPwd}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-ojs}"
+      MYSQL_USER: "${MYSQL_USER:-ojs}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:-ojsPwd}"
+    networks:
+      - inside
+    restart: always
+
+  ojs:
+    build: .
+    container_name: "ojs_app_${COMPOSE_PROJECT_NAME:-demo}"
+    hostname: "${COMPOSE_PROJECT_NAME:-demo}"
+    ports:
+      - "${HTTP_PORT:-8081}:80"
+      - "${HTTPS_PORT:-443}:443"
+    networks:
+      - inside
+    depends_on:
+      - db
+    restart: always
