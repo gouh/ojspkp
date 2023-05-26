@@ -11,7 +11,7 @@ Instalación de OJS PKP con docker
 * Operating system: Any OS that supports the above software, including Linux, BSD, Solaris, Mac OS X, Windows
 Puedes verlos [aquí](https://github.com/pkp/ojs/blob/3_3_0-14/docs/README.md#system-requirements)
 
-## Definimos una configuracion para apache en "root/etc/php7/conf.d"
+## Definimos una configuración para apache en "root/etc/php7/conf.d"
 ```text
 post_max_size = 30M
 file_uploads = On
@@ -25,7 +25,7 @@ opcache_max_file_size = 0
 opcache_enable_cli = 1
 ```
 
-## Definimos una configuracion para apache en "root/etc/apache2/conf.d"
+## Definimos una configuración para apache en "root/etc/apache2/conf.d"
 ```apache
 LoadModule slotmem_shm_module modules/mod_slotmem_shm.so
 LoadModule rewrite_module modules/mod_rewrite.so
@@ -200,7 +200,7 @@ ENV COMPOSER_ALLOW_SUPERUSER=1  \
 	OJS_CONF="/var/www/html/config.inc.php"
 
 
-# directorio de PHP
+# Directorio de PHP
 ENV PHP_INI_DIR /etc/php/7.3
 
 # Servicios basicos
@@ -328,7 +328,7 @@ CMD ["ojs-start"]
 
 ```
 
-## Por ultimo preparamos un docker compose con mariadb y nuestro dockerfile
+## Por último preparamos un docker compose con mariadb y nuestro dockerfile
 ```yaml
 version: "3.6"
 
@@ -386,4 +386,14 @@ OJS_DB_USER=ojs
 OJS_DB_PASSWORD=ojs 
 OJS_DB_NAME=ojs 
 ```
+
+## Levantar el proyecto
+Por último, simplemente ejecutamos el comando.
+```shell
+docker compose up -d
+```
+![imagen](https://github.com/gouh/ojspkp/assets/13145599/cab5789b-2b97-47c4-95cb-9e8e9d6aad0d)
+
+con esto el proyecto se podra ver en http://localhost:8081
+![imagen](https://github.com/gouh/ojspkp/assets/13145599/2613d2a8-8ffd-42fb-91aa-fc874c411aa3)
 
